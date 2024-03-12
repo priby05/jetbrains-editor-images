@@ -9,6 +9,8 @@
 # SPDX-License-Identifier: EPL-2.0
 #
 
+#added multi-architecture support
+
 base_dir=$(cd "$(dirname "$0")" || exit; pwd)
 
 RELEASE_TAG=

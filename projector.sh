@@ -16,6 +16,7 @@ base_dir=$(
 
 CONTAINER_TAG=
 URL=
+ARCHITECTURE=
 
 COMMAND=
 CONTAINER_TO_RUN=
@@ -24,7 +25,6 @@ RUN_ON_BUILD=false
 SAVE_ON_BUILD=false
 SAVE_ON_BUILD_DIRECTORY="$base_dir"/build/docker
 
-PROGRESS=auto
 CONFIG_JSON_PATH="$base_dir"/compatible-ide.json
 PREPARE_ASSEMBLY_ONLY=false
 
@@ -48,7 +48,8 @@ MACHINE_EXEC_ASSET_DEST="$base_dir"/asset-machine-exec
 
 DOC_URL=https://github.com/che-incubator/jetbrains-editor-images/tree/main/doc
 
-DOCKER=${DOCKER:-docker}
+#added podman instead of DOCKER
+PODMAN=${PODMAN:-podman}
 
 # Logging configuration
 # https://en.wikipedia.org/wiki/Syslog#Severity_level
@@ -114,13 +115,13 @@ the predefined IDE packaging from the default configuration.
 Options:
   -t, --tag string              Name and optionally a tag in the 'name:tag' format for the result image
   -u, --url string              Downloadable URL of IntelliJ-based IDE package, should be a tar.gz archive
+  -a, --architecture string     Specify architecture of build. i.e linux/s390x, linux/amd64, etc
       --run-on-build            Run the container immediately after build
       --save-on-build           Save the image to a tar archive after build. Basename of --url.
       --mount-volumes [string]  Mount volumes to the container which was started using '--run-on-build' option
                                 Volumes should be separated by comma, e.g. "/l/path_1:/r/path_1,/l/path_2:/r/path_2".
                                 If option value is omitted, then default value is loaded.
                                 Default value: \$HOME/projector-user:/home/projector-user,\$HOME/projector-projects:/projects
-  -p, --progress string         Set type of progress output ("auto"|"plain") (default "auto")
       --config string           Specify the configuration file for predefined IDE package list (default "$CONFIG_JSON_PATH")
       --prepare                 Clone and build Projector only ignoring other options. Also downloads the IDE packaging
                                 by the --url option. If --url option is omitted then interactive wizard is called to choose
@@ -216,13 +217,12 @@ prepareProjectorServerAsset() {
 
   read -r -d '' PRE_BUILD_SUMMARY <<-EOM
   Pre-build $PROJECTOR_SERVER_IMAGE container final summary
-          Docker build progress configuration: $PROGRESS
           Container name: $PROJECTOR_SERVER_IMAGE
 EOM
   log:debug "$PRE_BUILD_SUMMARY"
   log:info "Build '$PROJECTOR_SERVER_IMAGE'"
 
-  "${DOCKER}" build --progress="$PROGRESS" -f build/dockerfiles/projector-server-builder.Dockerfile -t "$PROJECTOR_SERVER_IMAGE" .
+  "${PODMAN}" build --platform ${ARCHITECTURE} -f build/dockerfiles/projector-server-builder.Dockerfile -t "$PROJECTOR_SERVER_IMAGE" .
   # shellcheck disable=SC2181
   if [[ $? -eq 0 ]]; then
     log:info "Container '$PROJECTOR_SERVER_IMAGE' successfully built"
@@ -244,13 +244,12 @@ prepareChePluginAsset() {
 
   read -r -d '' PRE_BUILD_SUMMARY <<-EOM
   Pre-build $PLUGIN_BUILDER_IMAGE container final summary
-          Docker build progress configuration: $PROGRESS
           Container name: $PLUGIN_BUILDER_IMAGE
 EOM
   log:debug "$PRE_BUILD_SUMMARY"
   log:info "Build '$PLUGIN_BUILDER_IMAGE'"
 
-  "${DOCKER}" build --progress="$PROGRESS" -f build/dockerfiles/che-plugin-builder.Dockerfile -t "$PLUGIN_BUILDER_IMAGE" .
+  "${PODMAN}" build --platform "$ARCHITECTURE" -f build/dockerfiles/che-plugin-builder.Dockerfile -t "$PLUGIN_BUILDER_IMAGE" .
   # shellcheck disable=SC2181
   if [[ $? -eq 0 ]]; then
     log:info "Container '$PLUGIN_BUILDER_IMAGE' successfully built"
@@ -272,13 +271,12 @@ prepareMachineExecBinary() {
 
   read -r -d '' PRE_BUILD_SUMMARY <<-EOM
     Pre-build $MACHINE_EXEC_IMAGE container final summary
-            Docker build progress configuration: $PROGRESS
             Container name: $MACHINE_EXEC_IMAGE
 EOM
     log:debug "$PRE_BUILD_SUMMARY"
     log:info "Build '$MACHINE_EXEC_IMAGE'"
 
-    "${DOCKER}" build --progress="$PROGRESS" -f build/dockerfiles/machine-exec-provider.Dockerfile  -t "$MACHINE_EXEC_IMAGE" .
+    "${PODMAN}" build --platform "$ARCHITECTURE" -f build/dockerfiles/machine-exec-provider.Dockerfile  -t "$MACHINE_EXEC_IMAGE" .
     # shellcheck disable=SC2181
     if [[ $? -eq 0 ]]; then
       log:info "Container '$MACHINE_EXEC_IMAGE' successfully built"
@@ -296,7 +294,6 @@ buildAssembly() {
 
   read -r -d '' PRE_BUILD_SUMMARY <<-EOM
 Pre-build $CONTAINER_TAG final summary
-        Docker build progress configuration: $PROGRESS
         Container name: $CONTAINER_TAG
         IDE package URL: $URL
 EOM
@@ -304,8 +301,8 @@ EOM
   log:info "Build '$CONTAINER_TAG'"
 
   DOCKER_BUILDKIT=1 \
-    "${DOCKER}" build \
-    --progress="$PROGRESS" \
+    "${PODMAN}" build \
+    --platform "$ARCHITECTURE" \
     -t "$CONTAINER_TAG" \
     -f Dockerfile .
   # shellcheck disable=SC2181
@@ -330,7 +327,7 @@ runContainerImage() {
   done <<<"$mountVolumes"
 
   log:info "Run container '$containerToStart'"
-  "${DOCKER}" run --rm -p 8887:8887 "${mountOptions[@]}" -it "$containerToStart" 2>&1 | awk '{print "       "$0}'
+  "${PODMAN}" run --rm -p 8887:8887 "${mountOptions[@]}" -it "$containerToStart" 2>&1 | awk '{print "       "$0}'
 }
 
 saveImageOnBuild() {
@@ -340,7 +337,7 @@ saveImageOnBuild() {
     fi
     local imageOutputName && imageOutputName=$(basename "$URL")
     log:info "Saving '$CONTAINER_TAG' to '$SAVE_ON_BUILD_DIRECTORY/$imageOutputName'"
-    "${DOCKER}" save "$CONTAINER_TAG" -o "$SAVE_ON_BUILD_DIRECTORY"/"$imageOutputName"
+    "${PODMAN}" save "$CONTAINER_TAG" -o "$SAVE_ON_BUILD_DIRECTORY"/"$imageOutputName"
     log:info "Image '$CONTAINER_TAG' saved to '$SAVE_ON_BUILD_DIRECTORY/$imageOutputName'"
   fi
 }
@@ -374,13 +371,12 @@ prepareIdePackagingAsset() {
 
   read -r -d '' PRE_BUILD_SUMMARY <<-EOM
   Pre-build $IDE_DOWNLOADER_IMAGE container final summary
-          Docker build progress configuration: $PROGRESS
           Container name: $IDE_DOWNLOADER_IMAGE
 EOM
   log:debug "$PRE_BUILD_SUMMARY"
   log:info "Build '$IDE_DOWNLOADER_IMAGE'"
 
-  "${DOCKER}" build --progress="$PROGRESS" -f build/dockerfiles/ide-downloader.Dockerfile --build-arg "URL=$URL" -t "$IDE_DOWNLOADER_IMAGE" .
+  "${PODMAN}" build --platform "$ARCHITECTURE" -f build/dockerfiles/ide-downloader.Dockerfile --build-arg "URL=$URL" -t "$IDE_DOWNLOADER_IMAGE" .
   # shellcheck disable=SC2181
   if [[ $? -eq 0 ]]; then
     log:info "Container '$IDE_DOWNLOADER_IMAGE' successfully built"
@@ -461,8 +457,8 @@ extractFromContainer() {
   tmpContainer="$(echo "$1" | tr "/:" "--")-$(date +%s)"
 
   log:info "Using temporary container '$tmpContainer'"
-  "${DOCKER}" create --name="$tmpContainer" "$1" sh >/dev/null 2>&1
-  "${DOCKER}" export "$tmpContainer" > "/tmp/$tmpContainer.tar"
+  "${PODMAN}" create --name="$tmpContainer" "$1" sh >/dev/null 2>&1
+  "${PODMAN}" export "$tmpContainer" > "/tmp/$tmpContainer.tar"
 
   tmpDir="/tmp/$tmpContainer"
   log:info "Created temporary directory '$tmpDir'"
@@ -476,7 +472,7 @@ extractFromContainer() {
   mv "$tmpDir/$2" "$3"
 
   log:info "Clean up the temporary container and directory"
-  "${DOCKER}" rm -f "$tmpContainer" >/dev/null 2>&1
+  "${PODMAN}" rm -f "$tmpContainer" >/dev/null 2>&1
   rm -rf "/tmp/$tmpContainer.tar"
   rm -rf "$tmpDir" || true
 }
@@ -491,7 +487,7 @@ if [[ $? -ne 4 ]]; then
   exit 1
 fi
 
-OPTS=$(getopt -o 'hvt:up:l:' --longoptions 'help,version,tag:,url:,mount-volumes:,run-on-build,save-on-build,progress:,log-level:,config:,prepare' -u -n "$0" -- "$@")
+OPTS=$(getopt -o 'hvt:up:l:' --longoptions 'help,version,tag:,url:,architecture:,mount-volumes:,run-on-build,save-on-build,log-level:,config:,prepare' -u -n "$0" -- "$@")
 # shellcheck disable=SC2181
 if [[ $? -ne 0 ]]; then
   log:warning "Failed parsing options."
@@ -531,6 +527,10 @@ while true; do
     URL=$2
     shift 2
     ;;
+  -a | --architecture)
+    ARCHITECTURE=$2
+    shift 2
+    ;;
   --mount-volumes)
     case $2 in
     --)
@@ -553,18 +553,6 @@ while true; do
   --prepare)
     PREPARE_ASSEMBLY_ONLY=true
     shift
-    ;;
-  -p | --progress)
-    case $2 in
-    -- | auto)
-      PROGRESS=auto
-      shift 2
-      ;;
-    plain)
-      PROGRESS=plain
-      shift 2
-      ;;
-    esac
     ;;
   -l | --log-level)
     case $2 in
